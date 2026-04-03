@@ -26,7 +26,7 @@ st.sidebar.markdown("---")
 st.sidebar.subheader("🌐 Configuração de Proxy")
 usar_proxy = st.sidebar.checkbox("Ativar Proxy")
 
-# Novos campos para resolver o erro "Failed to Parse"
+# Campos separados para evitar erro de parse e autenticação
 proxy_ip = st.sidebar.text_input("IP e Porta", placeholder="ex: 91.123.10.72:6614")
 proxy_user = st.sidebar.text_input("Usuário Proxy (opcional)")
 proxy_pass = st.sidebar.text_input("Senha Proxy (opcional)", type="password")
@@ -35,49 +35,74 @@ proxy_pass = st.sidebar.text_input("Senha Proxy (opcional)", type="password")
 link_convite = st.text_input("Link do Convite:", placeholder="https://vm.tiktok.com/...")
 
 if st.button("Iniciar Simulação Android 🚀"):
-    if not link_convite or (usar_proxy and not proxy_ip):
-        st.error("Preencha o link e os dados da Proxy!")
+    if not link_convite:
+        st.error("Insira o link do TikTok primeiro!")
+    elif usar_proxy and not proxy_ip:
+        st.error("Você ativou a proxy, mas não colocou o IP:Porta!")
     else:
         progresso = st.progress(0)
         status = st.empty()
         
+        # Criamos uma sessão para gerenciar melhor os cookies e a conexão
+        session = requests.Session()
+
         for i in range(num_cliques):
             ua = random.choice(ANDROID_AGENTS)
             
-            # Montagem correta da URL da Proxy com Autenticação
+            # Montagem da Proxy com tratamento de espaços
             proxies = None
             if usar_proxy:
-                if proxy_user and proxy_pass:
-                    # Formato: http://usuario:senha@ip:porta
-                    p_url = f"http://{proxy_user}:{proxy_pass}@{proxy_ip}"
+                p_ip = proxy_ip.strip()
+                p_user = proxy_user.strip()
+                p_pass = proxy_pass.strip()
+                
+                if p_user and p_pass:
+                    # Formato que resolve o erro 407 (Authentication Required)
+                    p_url = f"http://{p_user}:{p_pass}@{p_ip}"
                 else:
-                    p_url = f"http://{proxy_ip}"
+                    p_url = f"http://{p_ip}"
                 
                 proxies = {"http": p_url, "https": p_url}
 
-            status.code(f"Tentativa {i+1}/{num_cliques}\nSimulando Android: {ua.split(';')[1]}\nStatus: Processando...")
+            status.code(f"Tentativa {i+1}/{num_cliques}\nSimulando Android: {ua.split(';')[1]}\nProxy: {'Ativa' if usar_proxy else 'Desativada'}")
             
             try:
-                # Headers extras para parecer mais real
+                # Headers para simular um navegador real vindo do Google
                 headers = {
                     'User-Agent': ua,
                     'Accept-Language': 'pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7',
-                    'Referer': 'https://www.google.com/'
+                    'Referer': 'https://www.google.com/',
+                    'Connection': 'keep-alive'
                 }
                 
-                # Faz a visita ao link
-                response = requests.get(link_convite, headers=headers, proxies=proxies, timeout=15)
+                # Executa a visita ao link com a sessão e a proxy configurada
+                response = session.get(
+                    link_convite, 
+                    headers=headers, 
+                    proxies=proxies, 
+                    timeout=20,
+                    allow_redirects=True
+                )
                 
                 if response.status_code == 200:
-                    st.toast(f"Sucesso na rodada {i+1}!")
+                    st.toast(f"✅ Rodada {i+1} concluída!")
+                elif response.status_code == 407:
+                    st.error("❌ Erro 407: Usuário ou Senha da Proxy estão incorretos!")
+                    break
                 else:
-                    st.warning(f"Resposta inesperada: {response.status_code}")
+                    st.warning(f"⚠️ Resposta inesperada: {response.status_code}")
             
             except Exception as e:
-                st.error(f"Erro na Proxy: {str(e)}")
+                # Trata erros de conexão de forma amigável
+                if "407" in str(e):
+                    st.error("❌ Erro de Autenticação na Proxy. Verifique Usuário/Senha.")
+                else:
+                    st.error(f"❌ Erro na Conexão: {str(e)}")
                 break
 
+            # Espera o tempo definido para não ser bloqueado rápido
             time.sleep(delay)
             progresso.progress((i + 1) / num_cliques)
             
-        st.success("✅ Ciclo finalizado!")
+        st.success("🤖 Ciclo finalizado! Verifique seu app do TikTok.")
+        st.balloons()
